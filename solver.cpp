@@ -1,6 +1,9 @@
 #include <functional>
 #include <iostream>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include "ilconcert/iloenv.h"
 #include "ilconcert/ilomodel.h"
 #include "ilcplex/ilocplexi.h"
@@ -13,33 +16,45 @@ private:
     IloEnv _env;
 };
 
-void permute(int len, std::function<void(bool[], int len)> lambda, int bit = 0);
-void generate_model(bool bits[], int len);
+void solve(bool bits[], int len);
+void permute_bits(int len, std::function<void(bool[], int len)> lambda, int bit = 0);
+
+bool export_models = false;
 
 int main(int argc, char** argv) {
-    int max_len;
-    if (argc == 1) {
-        max_len = 8;
-    } else if (argc == 2) {
-        max_len = std::atoi(argv[1]);
-        if (max_len < 2 || max_len > 16) exit(1);
-    } else {
+    int arg_offset = 0;
+    if (argc > 1) {
+        if (std::strcmp(argv[1], "-e") == 0 ||
+            std::strcmp(argv[1], "--export-models") == 0) {
+            export_models = true;
+            mkdir("models", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+            arg_offset = 1;
+        }
+    }
+
+    int max_len = 8;
+    int min_len = 2;
+
+    if (argc == (2 + arg_offset)) {
+        max_len = std::atoi(argv[1 + arg_offset]);
+    } else if (argc == (3 + arg_offset)) {
+        min_len = std::atoi(argv[1 + arg_offset]);
+        max_len = std::atoi(argv[2 + arg_offset]);
+    } else if (argc > (3 + arg_offset)) {
         exit(1);
     }
 
-    for (int len = 2; len <= max_len; ++len)
-        permute(len, generate_model);
+    if (min_len > max_len || max_len > 16) {
+        exit(1);
+    }
+
+
+    for (int len = min_len; len <= max_len; ++len)
+        permute_bits(len, solve);
 }
 
-void generate_model(bool bits[], int len) {
+void solve(bool bits[], int len) {
     int max = len - 1;
-
-    std::string name;
-    { // get bit-representation as string
-        std::stringstream rep;
-        for (int i = 0; i < len; ++i) rep << (bits[i] ? "1" : "0");
-        name = rep.str();
-    }
 
     // create the environment
     Env env;
@@ -61,24 +76,27 @@ void generate_model(bool bits[], int len) {
         for (int i = 0; i < len; ++i) {
             for (int j = 0; j < len; ++j) {
                 // x[i][j] <= x[i+1][j]
-                if (i < max) constraints.add(x[i][j] - x[i+1][j] <= 0);
+                if (i < max)
+                    constraints.add(x[i][j] - x[i+1][j] <= 0);
 
                 // x[i][j] <= x[i][j+1]
-                if (j < max) constraints.add(x[i][j] - x[i][j+1] <= 0);
-
-                if (i < max && j < max) {
-                    // x[i][j+1] - x[i][j] >= x[i+1][j+1] - x[i+1][j]
-                    constraints.add(x[i][j+1] - x[i][j] - x[i+1][j+1] + x[i+1][j] >= 0);
-
-                    // x[i+1][j] - x[i][j] >= x[i+1][j+1] - x[i][j+1]
-                    constraints.add(x[i+1][j] - x[i][j] - x[i+1][j+1] + x[i][j+1] >= 0);
-                }
+                if (j < max)
+                    constraints.add(x[i][j] - x[i][j+1] <= 0);
 
                 // x[i+1][j] - x[i][j] >= x[i+2][j] - x[i+1][j]
-                if (i < max - 1) constraints.add(x[i+1][j] - x[i][j] - x[i+2][j] + x[i+1][j] >= 0);
+                if (i < max - 1)
+                    constraints.add(x[i+1][j] - x[i][j] - x[i+2][j] + x[i+1][j] >= 0);
 
                 // x[i][j+1] - x[i][j] >= x[i][j+2] - x[i][j+1]
-                if (j < max - 1) constraints.add(x[i][j+1] - x[i][j] - x[i][j+2] + x[i][j+1] >= 0);
+                if (j < max - 1)
+                    constraints.add(x[i][j+1] - x[i][j] - x[i][j+2] + x[i][j+1] >= 0);
+
+                // x[i][j+1] - x[i][j] >= x[i+1][j+1] - x[i+1][j]
+                // x[i+1][j] - x[i][j] >= x[i+1][j+1] - x[i][j+1]
+                if (i < max && j < max) {
+                    constraints.add(x[i][j+1] - x[i][j] - x[i+1][j+1] + x[i+1][j] >= 0);
+                    constraints.add(x[i+1][j] - x[i][j] - x[i+1][j+1] + x[i][j+1] >= 0);
+                }
             }
         }
         model.add(constraints);
@@ -125,37 +143,40 @@ void generate_model(bool bits[], int len) {
     }
 
     {
-        IloCplex cplex(model);
-        cplex.setOut(((IloEnv)env).getNullStream());
+        std::stringstream name;
+        for (int i = 0; i < len; ++i)
+            name << (bits[i] ? "1" : "0");
 
-        // TODO: add a toggle to save the model
-        /*
-        std::string filepath("models/");
-        filepath += len - 48;
-        filepath += ".";
-        filepath += name;
-        filepath += ".lp";
-        cplex.exportModel(filepath.c_str());
-        */
+        IloCplex cplex(model);
+        // silence cplex
+        cplex.setOut(((IloEnv)env).getNullStream());
+        cplex.setWarning(((IloEnv)env).getNullStream());
+
+        // export
+        if (export_models) {
+            std::stringstream filepath;
+            filepath << "models/" << len << "." << name.str() << ".lp";
+            cplex.exportModel(filepath.str().c_str());
+        }
 
         // compute
         bool success = cplex.solve();
 
         // report
-        std::cout << len << '\t' << name << '\t' << cplex.getStatus();
+        std::cout << len << '\t' << name.str() << '\t' << cplex.getStatus();
         if (success) std::cout << '\t' << cplex.getObjValue();
         std::cout << std::endl;
     }
 }
 
-void permute(int len, std::function<void(bool[], int)> lambda, int bit) {
+void permute_bits(int len, std::function<void(bool[], int)> lambda, int bit) {
     assert(len <= 16);
     static bool bits[16];
     if (bit < len) {
         bits[bit] = false;    
-        permute(len, lambda, bit + 1);
+        permute_bits(len, lambda, bit + 1);
         bits[bit] = true;
-        permute(len, lambda, bit + 1);
+        permute_bits(len, lambda, bit + 1);
     } else {
         // omit trivial solutions
         // they conflict with the constraint that x[0][0] == 0
