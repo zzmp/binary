@@ -13,48 +13,60 @@ private:
     IloEnv _env;
 };
 
-int main() {
+void permute(int len, std::function<void(bool[], int len)> lambda, int bit = 0);
+void generate_model(bool bits[], int len);
+
+int main(int argc, char** argv) {
+    int max_len;
+    if (argc == 1) {
+        max_len = 8;
+    } else if (argc == 2) {
+        max_len = std::atoi(argv[1]);
+        if (max_len < 2 || max_len > 16) exit(1);
+    } else {
+        exit(1);
+    }
+
+    for (int len = 2; len <= max_len; ++len)
+        permute(len, generate_model);
+}
+
+void generate_model(bool bits[], int len) {
+    int max = len - 1;
+
+    std::string name;
+    { // get bit-representation as string
+        std::stringstream rep;
+        for (int i = 0; i < len; ++i) rep << (bits[i] ? "1" : "0");
+        name = rep.str();
+    }
+
     // create the environment
     Env env;
 
-    // create the problem
     IloModel model(env);
-    const int ARRAY_SIZE = 6;
-    const int ARRAY_MAX = ARRAY_SIZE - 1;
     IloArray<IloIntVarArray> x(env);
 
     { // create variables
-        for (int i = 0; i < ARRAY_SIZE; ++i) {
+        for (int i = 0; i < len; ++i) {
             IloIntVarArray tmp(env);
-            for (int j = 0; j < ARRAY_SIZE; ++j) tmp.add(IloIntVar(env));
+            for (int j = 0; j < len; ++j) tmp.add(IloIntVar(env));
             x.add(tmp);
         }
     }
 
-    { // create constraints
+    { // create general constraints
         x[0][0].setUB(0);
-        IloConstraintArray termini(env);
-        termini.add(x[5][0] == x[5][5]);
-        termini.add(x[3][1] == x[5][5]);
-        termini.add(x[2][3] == x[5][5]);
-        termini.add(x[4][0] == x[5][5]);
-
-        termini.add(x[5][0] - x[4][0] > 0);
-        termini.add(x[3][1] - x[2][1] > 0);
-        termini.add(x[2][3] - x[1][3] > 0);
-        termini.add(x[4][0] - x[3][0] > 0);
-        model.add(termini);
-
         IloRangeArray constraints(env);
-        for (int i = 0; i < ARRAY_SIZE; ++i) {
-            for (int j = 0; j < ARRAY_SIZE; ++j) {
+        for (int i = 0; i < len; ++i) {
+            for (int j = 0; j < len; ++j) {
                 // x[i][j] <= x[i+1][j]
-                if (i < ARRAY_MAX) constraints.add(x[i][j] - x[i+1][j] <= 0);
+                if (i < max) constraints.add(x[i][j] - x[i+1][j] <= 0);
 
                 // x[i][j] <= x[i][j+1]
-                if (j < ARRAY_MAX) constraints.add(x[i][j] - x[i][j+1] <= 0);
+                if (j < max) constraints.add(x[i][j] - x[i][j+1] <= 0);
 
-                if (i < ARRAY_MAX && j < ARRAY_MAX) {
+                if (i < max && j < max) {
                     // x[i][j+1] - x[i][j] >= x[i+1][j+1] - x[i+1][j]
                     constraints.add(x[i][j+1] - x[i][j] - x[i+1][j+1] + x[i+1][j] >= 0);
 
@@ -63,35 +75,99 @@ int main() {
                 }
 
                 // x[i+1][j] - x[i][j] >= x[i+2][j] - x[i+1][j]
-                if (i < ARRAY_MAX - 1) constraints.add(x[i+1][j] - x[i][j] - x[i+2][j] + x[i+1][j] >= 0);
+                if (i < max - 1) constraints.add(x[i+1][j] - x[i][j] - x[i+2][j] + x[i+1][j] >= 0);
 
                 // x[i][j+1] - x[i][j] >= x[i][j+2] - x[i][j+1]
-                if (j < ARRAY_MAX - 1) constraints.add(x[i][j+1] - x[i][j] - x[i][j+2] + x[i][j+1] >= 0);
+                if (j < max - 1) constraints.add(x[i][j+1] - x[i][j] - x[i][j+2] + x[i][j+1] >= 0);
             }
         }
         model.add(constraints);
     }
 
-    // create the objective function
-    model.add(IloMinimize(env, x[ARRAY_MAX][ARRAY_MAX]));
+    { // create permutation-specific constraints
+        IloConstraintArray termini(env);
 
-    IloCplex cplex(model);
+        auto for_termini = [&bits, &len, &max](std::function<void(int,int)> lambda) {
+            // TODO: review
+            int low_bit = 0;
+            bool pattern = bits[low_bit];
+            int trues, falses;
 
-    // save
-    cplex.exportModel("model.lp");
+            for (int i = 1; i < len; ++i) {
+                bool bit = bits[i];
+                if (bit == pattern) continue;
 
-    // solve
-    bool success = cplex.solve();
-    std::cout << cplex.getStatus() << std::endl;
-    if (success) {
-        std::cout << cplex.getObjValue() << std::endl;
+                trues = low_bit;
+                falses = max - (i - 1);
 
-        IloNumArray soln(env);
-        for (int i = 0; i < ARRAY_SIZE; ++i) {
-            cplex.getValues(soln, x[i]);
-            for (int j = 0; j < ARRAY_SIZE; ++j) std::cout << soln[j] << ' ';
-            std::cout << std::endl;
+                low_bit = i;
+                pattern = bit;
+
+                lambda(falses, trues);
+            }
+
+            trues = low_bit;
+            falses = 0;
+            lambda(falses, trues);
+        };
+
+        for_termini([&termini, &x, &max](int i, int j) {
+            termini.add(x[i][j] == x[max][max]);
+            if (i > 0) termini.add(x[i][j] - x[i-1][j] > 0);
+            if (j > 0) termini.add(x[i][j] - x[i][j-1] > 0);
+        });
+
+        model.add(termini);
+    }
+
+    { // create the objective function
+        model.add(IloMinimize(env, x[len - 1][len - 1]));
+    }
+
+    {
+        IloCplex cplex(model);
+        cplex.setOut(((IloEnv)env).getNullStream());
+
+        // TODO: add a toggle to save the model
+        /*
+        std::string filepath("models/");
+        filepath += len - 48;
+        filepath += ".";
+        filepath += name;
+        filepath += ".lp";
+        cplex.exportModel(filepath.c_str());
+        */
+
+        // compute
+        bool success = cplex.solve();
+
+        // report
+        std::cout << len << '\t' << name << '\t' << cplex.getStatus();
+        if (success) std::cout << '\t' << cplex.getObjValue();
+        std::cout << std::endl;
+    }
+}
+
+void permute(int len, std::function<void(bool[], int)> lambda, int bit) {
+    assert(len <= 16);
+    static bool bits[16];
+    if (bit < len) {
+        bits[bit] = false;    
+        permute(len, lambda, bit + 1);
+        bits[bit] = true;
+        permute(len, lambda, bit + 1);
+    } else {
+        // omit trivial solutions
+        // they conflict with the constraint that x[0][0] == 0
+        bool valid = false;
+        bool bit = bits[0];
+        for (int i = 0; i < len; ++i) {
+            if (bits[i] != bit) {
+                valid = true;
+                break;
+            }
         }
 
+        if (valid) lambda(bits, len);
     }
 }
