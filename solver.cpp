@@ -105,34 +105,31 @@ void solve(bool bits[], int len) {
     { // create permutation-specific constraints
         IloConstraintArray termini(env);
 
-        auto for_termini = [&bits, &len, &max](std::function<void(int,int)> lambda) {
-            // TODO: review
+        auto for_termini = [&bits, &len, &max](std::function<void(int falses,int trues)> lambda) {
             int low_bit = 0;
-            bool pattern = bits[low_bit];
-            int trues, falses;
+            bool last_pattern = bits[low_bit];
 
-            for (int i = 1; i < len; ++i) {
-                bool bit = bits[i];
-                if (bit == pattern) continue;
+            // find all contiguous solutions
+            for (int i = 0; i < len; ++i) {
+                bool pattern = bits[i];
+                if (pattern == last_pattern) continue;
 
-                trues = low_bit;
-                falses = max - (i - 1);
+                lambda(max - (i - 1), low_bit);
 
                 low_bit = i;
-                pattern = bit;
-
-                lambda(falses, trues);
+                last_pattern = pattern;
             }
-
-            trues = low_bit;
-            falses = 0;
-            lambda(falses, trues);
+            lambda(0, low_bit);
         };
 
         for_termini([&termini, &x, &max](int i, int j) {
+            // terminus should equal maximal value
             termini.add(x[i][j] == x[max][max]);
+
+            // terminus should be greater than its antecedents
             if (i > 0) termini.add(x[i][j] - x[i-1][j] > 0);
             if (j > 0) termini.add(x[i][j] - x[i][j-1] > 0);
+            assert(i > 0 || j > 0);
         });
 
         model.add(termini);
