@@ -19,3 +19,7 @@ By default, `./solver` will solve all boolean functions from n=2..8.
 `./solver m1 m2` will solve functions from n=m1..m2 (m1 >= 2, m2 =< 16).
 
 `./solver -e` (or `./solver --export-models`) will also dump `.lp`-formatted models into a `models` folder in the same directory, for inspection.
+
+### Solutions
+
+`solutions` contains solutions for n=2..12. The maximal goal value is 36 (using `awk 'BEGIN{v=0}{if ($4>0+v) v=$4} END{print g}`).
