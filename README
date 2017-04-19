@@ -1,0 +1,21 @@
+boolean
+---
+
+A binary to find the goal value of boolean functions.
+
+`./solver`, when compiled, will iterate through all combinations of an n-length boolean function and, using cplex, find the minimum goal value if possible.
+
+### Compiling
+
+You will need CPLEX Community Edition, from IBM. The Makefile assumes that this is installed in `/opt/ibm/ILOG/CPLEX_Studio_Community127`.
+
+Compile with `make`.
+
+### Running
+
+By default, `./solver` will solve all boolean functions from n=2..8.
+
+`./solver m` will solve functions from n=2..m (m <= 16).
+`./solver m1 m2` will solve functions from n=m1..m2 (m1 >= 2, m2 =< 16).
+
+`./solver -e` (or `./solver --export-models`) will also dump `.lp`-formatted models into a `models` folder in the same directory, for inspection.

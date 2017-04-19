@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    if (min_len > max_len || max_len > 16) {
+    if (min_len > max_len || min_len < 2 || max_len > 16) {
         exit(1);
     }
 
