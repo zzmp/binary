@@ -26,3 +26,5 @@ By default, `./solver` will solve all boolean functions from n=2..8.
 
 `solutions` contains solutions for n=2..12.
 The maximal goal value is 36 (using `awk 'BEGIN{v=0}{if ($4>0+v) v=$4} END{print g}`).
+
+These are tabulated and statistics are given in `stats`.
