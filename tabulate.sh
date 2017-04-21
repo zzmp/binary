@@ -5,7 +5,7 @@ get_stats() {
 }
 
 echo N MIN MAX AVG
-for i in {2..12}
+for i in {2..10}
 do
     get_stats $i
 done

@@ -147,29 +147,28 @@ void solve(bool bits[], int len) {
             lambda(0, low_bit);
         };
 
-        std::vector<int> minima_i(len);
-        std::vector<int> minima_j(len);
+        std::vector<int> maxima(len);
         // the diagonal is always the maximal value
-        for (int i = 0; i < len; ++i) {
-            minima_i[i] = max - i;
-            minima_j[i] = max - i;
-        }
+        for (int i = 0; i < len; ++i)
+            maxima[i] = max - i;
 
-        for_termini([&minima_i, &minima_j, &x, &max](int i, int j) {
-            // terminus should be less than the row's minimum
-            minima_i[i] = j;
-            minima_j[j] = i;
+        // but the solution vector may have smaller maxima
+        for_termini([&maxima](int i, int j) {
+            maxima[i] = j;
         });
 
+        int lowest_j = len;
         for (int i = 0; i < len; ++i) {
-            int j = minima_i[i];
+            int j = maxima[i];
 
-            // minimum should equal maximal value
+            // maximum should equal maximal value
             termini.add(x[i][j] == x[max][max]);
 
             // minimum should be greater than its antecedents
-            if (i > 0 && minima_j[j] > i - 1) termini.add(x[max][max] - x[i-1][j] > 0);
-            if (j > 0) termini.add(x[max][max] - x[i][j-1] > 0);
+            if (i > 0 && j < lowest_j) termini.add(x[max][max] - x[i-1][j] > 0);
+            if (j > 0 && j <= lowest_j) termini.add(x[max][max] - x[i][j-1] > 0);
+
+            lowest_j = std::min(j, lowest_j);
         }
 
         model.add(termini);
