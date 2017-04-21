@@ -17,8 +17,8 @@ private:
     IloEnv _env;
 };
 
-void solve(bool bits[], int len);
-void permute_bits(int len, std::function<void(bool[], int len)> lambda, int bit = 0);
+void solve(bool value[], int len);
+void permute_value(int len, std::function<void(bool[], int)> lambda, int bit = 0);
 
 bool export_models = false;
 bool verbose = false;
@@ -26,34 +26,31 @@ bool verbose = false;
 int main(int argc, char** argv) {
     int arg_offset = 0;
     if (argc > 1) {
-        bool should_export_models = std::strcmp(argv[1], "-e") == 0 ||
-            std::strcmp(argv[1], "--export-models") == 0;
-        bool should_be_verbose = std::strcmp(argv[1], "-v") == 0 ||
+        verbose = std::strcmp(argv[1], "-v") == 0 ||
             std::strcmp(argv[1], "--verbose") == 0;
+        export_models = std::strcmp(argv[1], "-e") == 0 ||
+            std::strcmp(argv[1], "--export-models") == 0;
+        bool singleton = std::strcmp(argv[1], "-s") == 0 ||
+            std::strcmp(argv[1], "--singleton") == 0 ||
+            verbose;
 
-        if (should_export_models || should_be_verbose) {
-            export_models = true;
-
+        if (export_models) {
             mkdir("models", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
             arg_offset = 1;
         }
 
-        if (should_be_verbose) {
-            verbose = true;
-
+        if (singleton) {
             int len = std::strlen(argv[2]);
-            bool* bits = new bool[len];
+            bool* value = new bool[len];
             for (int i = 0; i < len; ++i) {
-                if (argv[2][i] == '0') {
-                    bits[i] = false;
-                } else if (argv[2][i] == '1') {
-                    bits[i] = true;
-                } else {
-                    exit(1);
+                switch(argv[2][i]) {
+                    case '1': value[i] = true; break;
+                    case '2': value[i] = false; break;
+                    default: exit(1);
                 }
             }
-            solve(bits, len);
-            delete[] bits;
+            solve(value, len);
+            delete[] value;
 
             exit(0);
         }
@@ -61,18 +58,18 @@ int main(int argc, char** argv) {
 
     if (argc == (2 + arg_offset)) {
         int len = std::atoi(argv[1 + arg_offset]) + 1;
-        permute_bits(len, solve);
+        permute_value(len, solve);
     } else if (argc == (3 + arg_offset)) {
         int min_len = std::atoi(argv[1 + arg_offset]) + 1;
         int max_len = std::atoi(argv[2 + arg_offset]) + 1;
         for (int len = min_len; len <= max_len; ++len)
-            permute_bits(len, solve);
+            permute_value(len, solve);
     }
 
     exit(1);
 }
 
-void solve(bool bits[], int len) {
+void solve(bool value[], int len) {
     int max = len - 1;
 
     // create the environment
@@ -87,7 +84,7 @@ void solve(bool bits[], int len) {
             for (int j = 0; j < len; ++j) {
                 IloIntVar y(env);
                 std::stringstream name;
-                name << "x_" << i << "_" << j;
+                name << "_" << i << "_" << j << "_";
                 y.setName(name.str().c_str());
                 tmp.add(y);
             }
@@ -128,50 +125,41 @@ void solve(bool bits[], int len) {
     }
 
     { // create permutation-specific constraints
-        IloConstraintArray termini(env);
+        IloConstraintArray constraints(env);
 
-        auto for_termini = [&bits, &len, &max](std::function<void(int falses,int trues)> lambda) {
-            int low_bit = 0;
-            bool last_pattern = bits[low_bit];
-
-            // find all contiguous solutions
-            for (int i = 0; i < len; ++i) {
-                bool pattern = bits[i];
-                if (pattern == last_pattern) continue;
-
-                lambda(max - (i - 1), low_bit);
-
-                low_bit = i;
-                last_pattern = pattern;
-            }
-            lambda(0, low_bit);
-        };
-
-        std::vector<int> maxima(len);
-        // the diagonal is always the maximal value
+        // create a certificate vector
+        std::vector<int> certificates(len);
+        // the diagonal always has a certificate
         for (int i = 0; i < len; ++i)
-            maxima[i] = max - i;
+            certificates[i] = max - i;
 
-        // but the solution vector may have smaller maxima
-        for_termini([&maxima](int i, int j) {
-            maxima[i] = j;
-        });
-
-        int lowest_j = len;
+        // find the minimal certificates from contiguous values
+        int low_value= 0;
+        bool last_pattern = value[low_value];
         for (int i = 0; i < len; ++i) {
-            int j = maxima[i];
+            bool pattern = value[i];
+            if (pattern == last_pattern) continue;
 
-            // maximum should equal maximal value
-            termini.add(x[i][j] == x[max][max]);
+            certificates[max - (i - 1)] = low_value;
 
-            // minimum should be greater than its antecedents
-            if (i > 0 && j < lowest_j) termini.add(x[max][max] - x[i-1][j] > 0);
-            if (j > 0 && j <= lowest_j) termini.add(x[max][max] - x[i][j-1] > 0);
+            low_value= i;
+            last_pattern = pattern;
+        }
+        certificates[0] = low_value;
 
-            lowest_j = std::min(j, lowest_j);
+        // the certificate vector should be monotonically decreasing
+        for (int i = 1; i < len; ++i)
+            certificates[i] = std::min(certificates[i-1], certificates[i]);
+
+        for (int i = 0; i < len; ++i) {
+            int j = certificates[i];
+            // add a constraint on the maximal values (certificates)
+            constraints.add(x[i][j] == x[max][max]);
+            // add a constraint to values bordering certificates
+            if (j > 0) constraints.add(x[max][max] - x[i][j-1] > 0);
         }
 
-        model.add(termini);
+        model.add(constraints);
     }
 
     { // create the objective function
@@ -181,7 +169,7 @@ void solve(bool bits[], int len) {
     {
         std::stringstream name;
         for (int i = 0; i < len; ++i)
-            name << (bits[i] ? "1" : "0");
+            name << (value[i] ? "1" : "0");
 
         IloCplex cplex(model);
         // silence cplex
@@ -215,26 +203,26 @@ void solve(bool bits[], int len) {
     }
 }
 
-void permute_bits(int len, std::function<void(bool[], int)> lambda, int bit) {
+void permute_value(int len, std::function<void(bool[], int)> lambda, int bit) {
     assert(len <= 16);
-    static bool bits[16];
+    static bool value[16];
     if (bit < len) {
-        bits[bit] = false;    
-        permute_bits(len, lambda, bit + 1);
-        bits[bit] = true;
-        permute_bits(len, lambda, bit + 1);
+        value[bit] = false;
+        permute_value(len, lambda, bit + 1);
+        value[bit] = true;
+        permute_value(len, lambda, bit + 1);
     } else {
         // omit trivial solutions
         // they conflict with the constraint that x[0][0] == 0
         bool valid = false;
-        bool bit = bits[0];
+        bool bit = value[0];
         for (int i = 0; i < len; ++i) {
-            if (bits[i] != bit) {
+            if (value[i] != bit) {
                 valid = true;
                 break;
             }
         }
 
-        if (valid) lambda(bits, len);
+        if (valid) lambda(value, len);
     }
 }
