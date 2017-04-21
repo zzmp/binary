@@ -15,16 +15,11 @@ Compile with `make`.
 
 ### Running
 
-By default, `./solver` will solve all boolean functions from n=2..8.
+By default, `./solver` will solve all boolean functions from n=1..7.
 
-- `./solver m` will solve functions from n=2..m (m <= 16).
-- `./solver m1 m2` will solve functions from n=m1..m2 (m1 >= 2, m2 =< 16).
-- `./solver --export-models`) will dump `.lp`-formatted models into `./models/` for inspection.
+- `./solver m` will solve functions from n=1..m (m < 16).
+- `./solver m1 m2` will solve functions from n=m1..m2 (m1 >= 1, m2 < 16).
+- `./solver --export-models` will dump `.lp`-formatted models into `./models/` for inspection.
 - `./solver -e` is an alias for `./solver --export-models`.
-
-### Solutions
-
-`solutions` contains solutions for n=2..12.
-The maximal goal value is 36 (using `awk 'BEGIN{v=0}{if ($4>0+v) v=$4} END{print g}`).
-
-These are tabulated and statistics are given in `stats`.
+- `./solver --verbose XXXX` will solve for XXXX, display the solution, and dump an `.lp` model.
+- `./solver -v XXXX` is an alias for `./solver --verbose XXXX`.

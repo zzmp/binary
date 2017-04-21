@@ -20,46 +20,57 @@ private:
 void solve(bool bits[], int len);
 void permute_bits(int len, std::function<void(bool[], int len)> lambda, int bit = 0);
 
-bool export_models = true;
+bool export_models = false;
+bool verbose = false;
 
-int main() {
-    bool bits[] = { false, false, true, true };
-    solve(bits, 4);
-}
-
-/*
 int main(int argc, char** argv) {
     int arg_offset = 0;
     if (argc > 1) {
-        if (std::strcmp(argv[1], "-e") == 0 ||
-            std::strcmp(argv[1], "--export-models") == 0) {
+        bool should_export_models = std::strcmp(argv[1], "-e") == 0 ||
+            std::strcmp(argv[1], "--export-models") == 0;
+        bool should_be_verbose = std::strcmp(argv[1], "-v") == 0 ||
+            std::strcmp(argv[1], "--verbose") == 0;
+
+        if (should_export_models || should_be_verbose) {
             export_models = true;
+
             mkdir("models", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
             arg_offset = 1;
         }
-    }
 
-    int max_len = 8;
-    int min_len = 2;
+        if (should_be_verbose) {
+            verbose = true;
+
+            int len = std::strlen(argv[2]);
+            bool* bits = new bool[len];
+            for (int i = 0; i < len; ++i) {
+                if (argv[2][i] == '0') {
+                    bits[i] = false;
+                } else if (argv[2][i] == '1') {
+                    bits[i] = true;
+                } else {
+                    exit(1);
+                }
+            }
+            solve(bits, len);
+            delete[] bits;
+
+            exit(0);
+        }
+    }
 
     if (argc == (2 + arg_offset)) {
-        max_len = std::atoi(argv[1 + arg_offset]);
-    } else if (argc == (3 + arg_offset)) {
-        min_len = std::atoi(argv[1 + arg_offset]);
-        max_len = std::atoi(argv[2 + arg_offset]);
-    } else if (argc > (3 + arg_offset)) {
-        exit(1);
-    }
-
-    if (min_len > max_len || min_len < 2 || max_len > 16) {
-        exit(1);
-    }
-
-
-    for (int len = min_len; len <= max_len; ++len)
+        int len = std::atoi(argv[1 + arg_offset]) + 1;
         permute_bits(len, solve);
+    } else if (argc == (3 + arg_offset)) {
+        int min_len = std::atoi(argv[1 + arg_offset]) + 1;
+        int max_len = std::atoi(argv[2 + arg_offset]) + 1;
+        for (int len = min_len; len <= max_len; ++len)
+            permute_bits(len, solve);
+    }
+
+    exit(1);
 }
-*/
 
 void solve(bool bits[], int len) {
     int max = len - 1;
@@ -189,16 +200,18 @@ void solve(bool bits[], int len) {
         bool success = cplex.solve();
 
         // report
-        std::cout << len << '\t' << name.str() << '\t' << cplex.getStatus();
+        std::cout << (len - 1) << '\t' << name.str() << '\t' << cplex.getStatus();
         if (success) std::cout << '\t' << cplex.getObjValue();
         std::cout << std::endl;
 
-        IloNumArray soln(env);
-        for (int i = len-1; i >= 0; --i) {
-            cplex.getValues(soln, x[i]);
-            for (int j = 0; j < len; ++j)
-                std::cout << soln[j] << '\t';
-            std::cout << std::endl;
+        if (verbose) {
+            IloNumArray soln(env);
+            for (int i = len-1; i >= 0; --i) {
+                cplex.getValues(soln, x[i]);
+                for (int j = 0; j < len; ++j)
+                    std::cout << soln[j] << '\t';
+                std::cout << std::endl;
+            }
         }
     }
 }
