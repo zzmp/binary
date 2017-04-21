@@ -1,5 +1,6 @@
 #include <functional>
 #include <iostream>
+#include <vector>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -19,8 +20,14 @@ private:
 void solve(bool bits[], int len);
 void permute_bits(int len, std::function<void(bool[], int len)> lambda, int bit = 0);
 
-bool export_models = false;
+bool export_models = true;
 
+int main() {
+    bool bits[] = { false, false, true, true };
+    solve(bits, 4);
+}
+
+/*
 int main(int argc, char** argv) {
     int arg_offset = 0;
     if (argc > 1) {
@@ -52,6 +59,7 @@ int main(int argc, char** argv) {
     for (int len = min_len; len <= max_len; ++len)
         permute_bits(len, solve);
 }
+*/
 
 void solve(bool bits[], int len) {
     int max = len - 1;
@@ -65,7 +73,13 @@ void solve(bool bits[], int len) {
     { // create variables
         for (int i = 0; i < len; ++i) {
             IloIntVarArray tmp(env);
-            for (int j = 0; j < len; ++j) tmp.add(IloIntVar(env));
+            for (int j = 0; j < len; ++j) {
+                IloIntVar y(env);
+                std::stringstream name;
+                name << "x_" << i << "_" << j;
+                y.setName(name.str().c_str());
+                tmp.add(y);
+            }
             x.add(tmp);
         }
     }
@@ -122,15 +136,30 @@ void solve(bool bits[], int len) {
             lambda(0, low_bit);
         };
 
-        for_termini([&termini, &x, &max](int i, int j) {
-            // terminus should equal maximal value
+        std::vector<int> minima_i(len);
+        std::vector<int> minima_j(len);
+        // the diagonal is always the maximal value
+        for (int i = 0; i < len; ++i) {
+            minima_i[i] = max - i;
+            minima_j[i] = max - i;
+        }
+
+        for_termini([&minima_i, &minima_j, &x, &max](int i, int j) {
+            // terminus should be less than the row's minimum
+            minima_i[i] = j;
+            minima_j[j] = i;
+        });
+
+        for (int i = 0; i < len; ++i) {
+            int j = minima_i[i];
+
+            // minimum should equal maximal value
             termini.add(x[i][j] == x[max][max]);
 
-            // terminus should be greater than its antecedents
-            if (i > 0) termini.add(x[i][j] - x[i-1][j] > 0);
-            if (j > 0) termini.add(x[i][j] - x[i][j-1] > 0);
-            assert(i > 0 || j > 0);
-        });
+            // minimum should be greater than its antecedents
+            if (i > 0 && minima_j[j] > i - 1) termini.add(x[max][max] - x[i-1][j] > 0);
+            if (j > 0) termini.add(x[max][max] - x[i][j-1] > 0);
+        }
 
         model.add(termini);
     }
@@ -163,6 +192,14 @@ void solve(bool bits[], int len) {
         std::cout << len << '\t' << name.str() << '\t' << cplex.getStatus();
         if (success) std::cout << '\t' << cplex.getObjValue();
         std::cout << std::endl;
+
+        IloNumArray soln(env);
+        for (int i = len-1; i >= 0; --i) {
+            cplex.getValues(soln, x[i]);
+            for (int j = 0; j < len; ++j)
+                std::cout << soln[j] << '\t';
+            std::cout << std::endl;
+        }
     }
 }
 
