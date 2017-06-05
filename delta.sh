@@ -15,8 +15,6 @@ check() {
     echo $k $n $vector $soln
 }
 
-for n in {2..10}; do
-    for k in $(seq 0 $n); do
-        check $k $n
-    done
+for k in $(seq 0 $1); do
+    check $k $1
 done
