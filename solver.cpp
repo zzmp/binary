@@ -224,7 +224,13 @@ void solve(bool value[], int len) {
         }
 
         // compute
-        bool success = cplex.solve();
+        bool success = false;
+        try {
+            success = cplex.solve();
+        } catch (IloCplex::Exception& e) {
+            std::cerr << e << std::endl;
+            exit(1);
+        }
 
         // report
         std::cout << (len - 1) << '\t' << name.str() << '\t' << cplex.getStatus();
