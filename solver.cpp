@@ -57,10 +57,10 @@ int main(int argc, char** argv) {
 
     // solve
     if (singleton) {
-        int len = std::strlen(argv[2]);
+        int len = std::strlen(argv[1 + arg_offset]);
         bool* value = new bool[len];
         for (int i = 0; i < len; ++i) {
-            switch(argv[2][i]) {
+            switch(argv[1 + arg_offset][i]) {
                 case '1': value[i] = true; break;
                 case '0': value[i] = false; break;
                 default:
