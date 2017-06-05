@@ -47,7 +47,6 @@ int main(int argc, char** argv) {
         }
         if (singleton) {
             arg_offset++;
-            verbose = true;
         }
     }
 
