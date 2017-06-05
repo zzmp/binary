@@ -1,10 +1,10 @@
 #!/bin/bash
 
 get_stats() {
-    cat solutions | grep ^$1 | awk -f tabulate.awk | xargs echo $1
+    cat solutions | grep ^$1 | awk -v OFS=$'\t' -f tabulate.awk
 }
 
-echo N MIN MAX AVG
+echo -e 'N\tMAX\tAVG'
 for i in {2..10}
 do
     get_stats $i

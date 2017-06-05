@@ -17,56 +17,97 @@ private:
     IloEnv _env;
 };
 
-void solve(bool value[], int len);
-void permute_value(int len, std::function<void(bool[], int)> lambda, int bit = 0);
-
 bool export_models = false;
+bool singleton = false;
 bool verbose = false;
+
+void permute(bool value[], int len, int bit = 0);
+void solve(bool value[], int len);
 
 int main(int argc, char** argv) {
     int arg_offset = 0;
+
+    // parse options
     if (argc > 1) {
-        verbose = std::strcmp(argv[1], "-v") == 0 ||
-            std::strcmp(argv[1], "--verbose") == 0;
-        export_models = std::strcmp(argv[1], "-e") == 0 ||
-            std::strcmp(argv[1], "--export-models") == 0;
-        bool singleton = std::strcmp(argv[1], "-s") == 0 ||
-            std::strcmp(argv[1], "--singleton") == 0 ||
-            verbose;
-
-        if (export_models) {
-            mkdir("models", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-            arg_offset = 1;
-        }
-
-        if (singleton) {
-            int len = std::strlen(argv[2]);
-            bool* value = new bool[len];
-            for (int i = 0; i < len; ++i) {
-                switch(argv[2][i]) {
-                    case '1': value[i] = true; break;
-                    case '2': value[i] = false; break;
-                    default: exit(1);
-                }
+        for (int i = 1; i < argc; ++i) {
+            if (std::strcmp(argv[i], "-s") == 0 || std::strcmp(argv[i], "--singleton") == 0) {
+                singleton = true;
+            } else if (std::strcmp(argv[i], "-e") == 0 || std::strcmp(argv[i], "--export-models") == 0) {
+                export_models = true;
+            } else if (std::strcmp(argv[i], "-v") == 0 || std::strcmp(argv[i], "--verbose") == 0) {
+                verbose = true;
             }
-            solve(value, len);
-            delete[] value;
-
-            exit(0);
+        }
+        if (verbose)
+            arg_offset++;
+        if (export_models) {
+            arg_offset++;
+            // create a models/ dir, if necessary
+            mkdir("models", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+        }
+        if (singleton) {
+            arg_offset++;
+            verbose = true;
         }
     }
 
-    if (argc == (2 + arg_offset)) {
-        int len = std::atoi(argv[1 + arg_offset]) + 1;
-        permute_value(len, solve);
-    } else if (argc == (3 + arg_offset)) {
-        int min_len = std::atoi(argv[1 + arg_offset]) + 1;
-        int max_len = std::atoi(argv[2 + arg_offset]) + 1;
-        for (int len = min_len; len <= max_len; ++len)
-            permute_value(len, solve);
+    if (argc <= (arg_offset + 1)) {
+        std::cerr << "missing inputs" << std::endl;
+        exit(1);
     }
 
-    exit(1);
+    // solve
+    if (singleton) {
+        int len = std::strlen(argv[2]);
+        bool* value = new bool[len];
+        for (int i = 0; i < len; ++i) {
+            switch(argv[2][i]) {
+                case '1': value[i] = true; break;
+                case '0': value[i] = false; break;
+                default:
+                    std::cerr << "bad singleton" << std::endl;
+                    exit(1);
+            }
+        }
+        solve(value, len);
+        delete[] value;
+    } else {
+        int min_len, max_len;
+        if (argc == (2 + arg_offset)) {
+            int len = std::atoi(argv[1 + arg_offset]) + 1;
+            min_len = max_len = len;
+        } else if (argc = (3 + arg_offset)) {
+            min_len = std::atoi(argv[1 + arg_offset]) + 1;
+            max_len = std::atoi(argv[2 + arg_offset]) + 1;
+        }
+        bool* value = new bool[max_len];
+        for (int i = 0; i < max_len; ++i) value[i] = false;
+        for (int len = min_len ; len <= max_len; ++len) {
+            permute(value, len);
+        }
+    }
+}
+
+// recursively permute through all solutions
+void permute(bool value[], int len, int bit) {
+    if (bit < len) {
+        value[bit] = false;
+        permute(value, len, bit + 1);
+        value[bit] = true;
+        permute(value, len, bit + 1);
+    } else {
+        bool valid = false;
+        bool bit = value[0];
+        for (int i = 0; i < len; ++i) {
+            // only solve non-trivial solutions
+            // trivial solutions conflict with the constraint that x[0][0] == 0
+            if (value[i] != bit) {
+                valid = true;
+                solve(value, len);
+                break;
+            }
+        }
+    }
 }
 
 void solve(bool value[], int len) {
@@ -176,7 +217,7 @@ void solve(bool value[], int len) {
         cplex.setOut(((IloEnv)env).getNullStream());
         cplex.setWarning(((IloEnv)env).getNullStream());
 
-        // export
+        // export, if necessary
         if (export_models) {
             std::stringstream filepath;
             filepath << "models/" << len << "." << name.str() << ".lp";
@@ -195,34 +236,11 @@ void solve(bool value[], int len) {
             IloNumArray soln(env);
             for (int i = len-1; i >= 0; --i) {
                 cplex.getValues(soln, x[i]);
+                std::cout << '\t';
                 for (int j = 0; j < len; ++j)
-                    std::cout << soln[j] << '\t';
+                    printf("%-3d", (int)soln[j]);
                 std::cout << std::endl;
             }
         }
-    }
-}
-
-void permute_value(int len, std::function<void(bool[], int)> lambda, int bit) {
-    assert(len <= 16);
-    static bool value[16];
-    if (bit < len) {
-        value[bit] = false;
-        permute_value(len, lambda, bit + 1);
-        value[bit] = true;
-        permute_value(len, lambda, bit + 1);
-    } else {
-        // omit trivial solutions
-        // they conflict with the constraint that x[0][0] == 0
-        bool valid = false;
-        bool bit = value[0];
-        for (int i = 0; i < len; ++i) {
-            if (value[i] != bit) {
-                valid = true;
-                break;
-            }
-        }
-
-        if (valid) lambda(value, len);
     }
 }
